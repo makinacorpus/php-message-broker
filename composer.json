@@ -1,5 +1,5 @@
 {
-    "name" : "makinacorpus/php-message-broker",
+    "name" : "makinacorpus/message-broker",
     "type": "library",
     "description": "Opiniated and simple message broker interface along with a few implementations",
     "keywords": ["message-broker", "postgresql", "symfony"],
