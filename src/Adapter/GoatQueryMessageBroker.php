@@ -7,6 +7,7 @@ namespace MakinaCorpus\MessageBroker\Adapter;
 use Goat\Runner\Runner;
 use MakinaCorpus\Message\Envelope;
 use MakinaCorpus\Message\Property;
+use MakinaCorpus\Message\Identifier\MessageId;
 use MakinaCorpus\Normalization\Serializer;
 
 /**
@@ -66,7 +67,7 @@ final class GoatQueryMessageBroker extends AbstractMessageBroker
      */
     protected function doSend(Envelope $envelope, string $serializedBody): void
     {
-        $this->runner->execute(
+        $this->runner->perform(
             <<<SQL
             INSERT INTO "message_broker"
                 (id, queue, headers, body)
@@ -95,11 +96,10 @@ final class GoatQueryMessageBroker extends AbstractMessageBroker
      */
     protected function doMarkForRetry(Envelope $envelope): void
     {
-        $serial = (int) $envelope->getProperty(self::PROP_SERIAL);
         $delay = (int) $envelope->getProperty(Property::RETRY_DELAI);
         $count = (int) $envelope->getProperty(Property::RETRY_COUNT, "0");
 
-        $this->runner->execute(
+        $this->runner->perform(
             <<<SQL
             UPDATE "message_broker"
             SET
@@ -109,12 +109,12 @@ final class GoatQueryMessageBroker extends AbstractMessageBroker
                 "retry_at" = current_timestamp + interval '"{$delay}" milliseconds',
                 "retry_count" = GREATEST("retry_count" + 1, ?::int)
             WHERE
-                "serial" = ?::int
+                "id" = ?
             SQL
             , [
                 $envelope->getProperties(),
                 $count,
-                $serial,
+                $envelope->getMessageId(),
             ]
         );
     }
@@ -122,12 +122,10 @@ final class GoatQueryMessageBroker extends AbstractMessageBroker
     /**
      * {@inheritdoc}
      */
-    protected function doMarkAsFailed(Envelope $envelope, ?\Throwable $exception = null): void
+    protected function doMarkAsFailed(MessageId $id, ?\Throwable $exception = null): void
     {
-        $serial = (int) $envelope->getProperty(self::PROP_SERIAL);
-
         if ($exception) {
-            $this->runner->execute(
+            $this->runner->perform(
                 <<<SQL
                 UPDATE "message_broker"
                 SET
@@ -136,26 +134,26 @@ final class GoatQueryMessageBroker extends AbstractMessageBroker
                     "error_message" = ?,
                     "error_trace" = ?
                 WHERE
-                    "serial" = ?
+                    "id" = ?
                 SQL,
                 [
                     $exception->getCode(),
                     $exception->getMessage(),
                     $this->normalizeExceptionTrace($exception),
-                    $serial,
+                    $id->toString(),
                 ]
             );
         } else {
-            $this->runner->execute(
+            $this->runner->perform(
                 <<<SQL
                 UPDATE "message_broker"
                 SET
                     "has_failed" = true
                 WHERE
-                    "serial" = ?
+                    "id" = ?
                 SQL,
                 [
-                    $serial,
+                    $id->toString(),
                 ]
             );
         }

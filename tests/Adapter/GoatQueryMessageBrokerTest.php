@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MakinaCorpus\MessageBroker\Tests\Adpater;
 
+use Goat\Query\Expression\ValueExpression;
 use Goat\Runner\Runner;
 use MakinaCorpus\MessageBroker\MessageBroker;
 use MakinaCorpus\MessageBroker\Adapter\GoatQueryMessageBroker;
@@ -13,8 +14,6 @@ final class GoatQueryMessageBrokerTest extends AbstractMessageBrokerTest
 {
     /**
      * {@inheritdoc}
-     *
-     * Override this for your own event store.
      */
     protected function createTestSchema(Runner $runner, string $schema)
     {
@@ -71,9 +70,28 @@ final class GoatQueryMessageBrokerTest extends AbstractMessageBrokerTest
     }
 
     /**
-     * Create your own event store
-     *
-     * Override this for your own event store.
+     * {@inheritdoc}
+     */
+    protected function createItemInQueue(MessageBroker $messageBroker, array $data): void
+    {
+        \assert($messageBroker instanceof GoatQueryMessageBroker);
+
+        $runner = (\Closure::bind(fn () => $messageBroker->runner, null, GoatQueryMessageBroker::class))();
+
+        $runner
+            ->getQueryBuilder()
+            ->insert('message_broker')
+            ->values([
+                'id' => $data['id'],
+                'headers' => new ValueExpression($data['headers'], 'json'),
+                'body' => $data['body'],
+            ])
+            ->execute()
+        ;
+    }
+
+    /**
+     * {@inheritdoc}
      */
     protected function createMessageBroker(Runner $runner, string $schema): MessageBroker
     {

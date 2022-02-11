@@ -8,6 +8,7 @@ use MakinaCorpus\Message\BrokenEnvelope;
 use MakinaCorpus\Message\Envelope;
 use MakinaCorpus\Message\Property;
 use MakinaCorpus\MessageBroker\MessageBroker;
+use MakinaCorpus\Message\Identifier\MessageId;
 use MakinaCorpus\Message\Identifier\MessageIdFactory;
 use MakinaCorpus\Normalization\NameMap;
 use MakinaCorpus\Normalization\Serializer;
@@ -81,8 +82,11 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
      * Mark the message as failed (reject).
      *
      * This method must be atomic on the driver.
+     *
+     * We cannot give you an envelope here, because it might have failed before
+     * constructing it.
      */
-    protected abstract function doMarkAsFailed(Envelope $envelope, ?\Throwable $exception = null): void;
+    protected abstract function doMarkAsFailed(MessageId $id, ?\Throwable $exception = null): void;
 
     /**
      * {@inheritdoc}
@@ -98,6 +102,8 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
         $serial = (int) $data['serial'];
 
         try {
+            $id = MessageIdFactory::create($data['id']);
+
             if (\is_resource($data['body'])) { // Bytea
                 $body = \stream_get_contents($data['body']);
             } else {
@@ -105,9 +111,9 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
             }
 
             // Restore necessary properties on which we are authoritative.
-            $data['headers'][Property::MESSAGE_ID] = $data['id']->toString();
+            $data['headers'][Property::MESSAGE_ID] = $id->toString();
             $data['headers'][self::PROP_SERIAL] = (string) $serial;
-            if ($data['retry_count']) {
+            if (isset($data['retry_count'])) {
                 $data['headers'][Property::RETRY_COUNT] = (string) $data['retry_count'];
             }
 
@@ -121,7 +127,7 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
                 try {
                     return Envelope::wrap($this->serializer->unserialize($className, $contentType, $body), $data['headers']);
                 } catch (\Throwable $e) {
-                    $this->markAsFailed($serial, $e);
+                    $this->doMarkAsFailed($id, $e);
 
                     // Serializer can throw any kind of exceptions, it can
                     // prove itself very unstable using symfony/serializer
@@ -134,7 +140,7 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
                 return BrokenEnvelope::wrap($body, $data['headers']);
             }
         } catch (\Throwable $e) {
-            $this->markAsFailed($serial, $e);
+            $this->doMarkAsFailed($id, $e);
 
             throw new \RuntimeException('Error while fetching messages', 0, $e);
         }
@@ -155,6 +161,10 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
      */
     public function ack(Envelope $envelope): void
     {
+        if (!$envelope->getProperty(self::PROP_SERIAL)) {
+            throw new \RuntimeException("You are attempting to reject a message that does not belong to us.");
+        }
+
         $this->doAck($envelope);
     }
 
@@ -163,38 +173,28 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
      */
     public function reject(Envelope $envelope, ?\Throwable $exception = null): void
     {
-        $serial = (int) $envelope->getProperty(self::PROP_SERIAL);
+        if (!$envelope->getProperty(self::PROP_SERIAL)) {
+            throw new \RuntimeException("You are attempting to reject a message that does not belong to us.");
+        }
 
         if ($envelope->hasProperty(Property::RETRY_COUNT)) {
             // Having a count property means the caller did already set it,
             // we will not increment it ourself.
-            $count = (int)$envelope->getProperty(Property::RETRY_COUNT, "0");
-            $max = (int)$envelope->getProperty(Property::RETRY_MAX, (string)4);
+            $count = (int) $envelope->getProperty(Property::RETRY_COUNT, "0");
+            $max = (int) $envelope->getProperty(Property::RETRY_MAX, "4");
 
-            if ($count >= $max) {
-                if ($serial) {
-                    $this->markAsFailed($serial);
+            // Prevent "0" count value from forcing a retry.
+            if ($count) {
+                if ($count >= $max) {
+                    $this->doMarkAsFailed($envelope->getMessageId());
+                } else {
+                    $this->doMarkForRetry($envelope);
                 }
-                return; // Dead letter.
-            }
-
-            if (!$serial) {
-                // This message was not originally delivered using this bus
-                // so we cannot update an existing item in queue, create a
-                // new one instead.
-                // Note that this should be an error, it should not happen,
-                // but re-queing it ourself is much more robust.
-                $this->doDispatch($envelope, true);
                 return;
             }
-
-            $this->doMarkForRetry($envelope);
-            return;
         }
 
-        if ($serial) {
-            $this->doMarkAsFailed($envelope);
-        }
+        $this->doMarkAsFailed($envelope->getMessageId());
     }
 
     /**

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace MakinaCorpus\MessageBroker\Tests\Adapter;
 
-use Goat\Query\Expression\ValueExpression;
 use Goat\Runner\Runner;
 use Goat\Runner\Testing\DatabaseAwareQueryTest;
 use Goat\Runner\Testing\TestDriverFactory;
@@ -146,7 +145,7 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
     /**
      * @dataProvider runnerDataProvider
      */
-    public function testRejectWithRetryCountWithoutSerialIsRequeued(TestDriverFactory $factory): void
+    public function testRejectWithRetryCountWithoutSerialIsInvalid(TestDriverFactory $factory): void
     {
         $messageBroker = $this->createMessageBroker($factory->getRunner(), $factory->getSchema());
 
@@ -157,17 +156,8 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
         $serial = $originalEnvelope->getProperty('x-serial');
         self::assertNotNull($serial);
 
-        $messageBroker->reject($originalEnvelope->withProperties([
-            Property::RETRY_COUNT => "1",
-            'x-serial' => null,
-        ]));
-
-        $envelope = $messageBroker->get();
-
-        self::assertSame("1", $envelope->getProperty(Property::RETRY_COUNT));
-        self::assertNotNull($envelope->getProperty('x-serial'));
-        self::assertNotSame($serial, $envelope->getProperty('x-serial'));
-        self::assertTrue($originalEnvelope->getMessageId()->equals($envelope->getMessageId()));
+        self::expectException(\Exception::class);
+        $messageBroker->reject($originalEnvelope->withProperties(['x-serial' => null]));
     }
 
     /**
@@ -230,19 +220,14 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
 
         $messageBroker = $this->createMessageBroker($runner, $factory->getSchema());
 
-        $runner
-            ->getQueryBuilder()
-            ->insert('message_broker')
-            ->values([
-                'id' => MessageIdFactory::generate()->toString(),
-                'headers' => new ValueExpression([
-                    Property::CONTENT_TYPE => 'application/json',
-                    Property::MESSAGE_TYPE => MockMessage::class,
-                ], 'json'),
-                'body' => '{}',
-            ])
-            ->execute()
-        ;
+        $this->createItemInQueue($messageBroker, [
+            'id' => MessageIdFactory::generate()->toString(),
+            'headers' => [
+                Property::CONTENT_TYPE => 'application/json',
+                Property::MESSAGE_TYPE => MockMessage::class,
+            ],
+            'body' => '{}',
+        ]);
 
         $envelope = $messageBroker->get();
 
@@ -259,19 +244,14 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
 
         $messageBroker = $this->createMessageBroker($runner, $factory->getSchema());
 
-        $runner
-            ->getQueryBuilder()
-            ->insert('message_broker')
-            ->values([
-                'id' => MessageIdFactory::generate()->toString(),
-                'headers' => new ValueExpression([
-                    Property::CONTENT_TYPE => 'application/json',
-                    Property::MESSAGE_TYPE => MockMessage::class,
-                ], 'json'),
-                'body' => '{}',
-            ])
-            ->execute()
-        ;
+        $this->createItemInQueue($messageBroker, [
+            'id' => MessageIdFactory::generate()->toString(),
+            'headers' => [
+                Property::CONTENT_TYPE => 'application/json',
+                Property::MESSAGE_TYPE => MockMessage::class,
+            ],
+            'body' => '{}',
+        ]);
 
         $envelope = $messageBroker->get();
 
@@ -288,18 +268,13 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
 
         $messageBroker = $this->createMessageBroker($runner, $factory->getSchema());
 
-        $runner
-            ->getQueryBuilder()
-            ->insert('message_broker')
-            ->values([
-                'id' => MessageIdFactory::generate()->toString(),
-                'headers' => new ValueExpression([
-                    Property::CONTENT_TYPE => 'application/json',
-                ], 'json'),
-                'body' => '{}',
-            ])
-            ->execute()
-        ;
+        $this->createItemInQueue($messageBroker, [
+            'id' => MessageIdFactory::generate()->toString(),
+            'headers' => [
+                Property::CONTENT_TYPE => 'application/json',
+            ],
+            'body' => '{}',
+        ]);
 
         $envelope = $messageBroker->get();
 
@@ -317,18 +292,13 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
 
         $messageBroker = $this->createMessageBroker($runner, $factory->getSchema());
 
-        $runner
-            ->getQueryBuilder()
-            ->insert('message_broker')
-            ->values([
-                'id' => MessageIdFactory::generate()->toString(),
-                'headers' => new ValueExpression([
-                    Property::MESSAGE_TYPE => MockMessage::class,
-                ], 'json'),
-                'body' => '{}',
-            ])
-            ->execute()
-        ;
+        $this->createItemInQueue($messageBroker, [
+            'id' => MessageIdFactory::generate()->toString(),
+            'headers' => [
+                Property::MESSAGE_TYPE => MockMessage::class,
+            ],
+            'body' => '{}',
+        ]);
 
         $envelope = $messageBroker->get();
 
@@ -336,6 +306,11 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
         self::assertInstanceOf(BrokenEnvelope::class, $envelope);
         self::assertSame('{}', $envelope->getMessage());
     }
+
+    /**
+     * Create an arbitrary item in queue.
+     */
+    protected abstract function createItemInQueue(MessageBroker $messageBroker, array $data): void;
 
     /**
      * Create message broker instance that will be tested.
