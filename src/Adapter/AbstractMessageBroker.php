@@ -26,8 +26,6 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
     use LoggerAwareTrait;
     use NameMapAwareTrait;
 
-    const PROP_SERIAL = 'x-serial';
-
     private string $contentType;
     private string $queue;
     private array $options;
@@ -50,7 +48,7 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
      * @return null|array
      *   Expected values are:
      *     - "id" (mixed): arbitrary message identifier from driver.
-     *     - "serial" (int): arbitrary message serial number.
+     *     - "serial" (int): backward compatibility, you may omit it.
      *     - "body" (string): message body.
      *     - "headers" (array<string,string>): message properties and headers.
      *     - "retry_count" (null|int): number of retries attempted so far.
@@ -99,8 +97,6 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
             return null;
         }
 
-        $serial = (int) $data['serial'];
-
         try {
             $id = MessageIdFactory::create($data['id']);
 
@@ -110,9 +106,14 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
                 $body = $data['body'];
             }
 
+            // Kept for backward compatibility, but in real life, we do
+            // not really care about this serial.
+            if (isset($data['serial'])) {
+                $data['headers']['x-serial'] = $data['serial'];
+            }
+
             // Restore necessary properties on which we are authoritative.
             $data['headers'][Property::MESSAGE_ID] = $id->toString();
-            $data['headers'][self::PROP_SERIAL] = (string) $serial;
             if (isset($data['retry_count'])) {
                 $data['headers'][Property::RETRY_COUNT] = (string) $data['retry_count'];
             }
@@ -161,10 +162,6 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
      */
     public function ack(Envelope $envelope): void
     {
-        if (!$envelope->getProperty(self::PROP_SERIAL)) {
-            throw new \RuntimeException("You are attempting to reject a message that does not belong to us.");
-        }
-
         $this->doAck($envelope);
     }
 
@@ -173,10 +170,6 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
      */
     public function reject(Envelope $envelope, ?\Throwable $exception = null): void
     {
-        if (!$envelope->getProperty(self::PROP_SERIAL)) {
-            throw new \RuntimeException("You are attempting to reject a message that does not belong to us.");
-        }
-
         if ($envelope->hasProperty(Property::RETRY_COUNT)) {
             // Having a count property means the caller did already set it,
             // we will not increment it ourself.

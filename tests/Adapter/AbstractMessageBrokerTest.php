@@ -128,9 +128,6 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
 
         $originalEnvelope = $messageBroker->get();
 
-        $serial = $originalEnvelope->getProperty('x-serial');
-        self::assertNotNull($serial);
-
         $messageBroker->reject($originalEnvelope->withProperties([
             Property::RETRY_COUNT => "1",
         ]));
@@ -138,26 +135,7 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
         $envelope = $messageBroker->get();
 
         self::assertSame("1", $envelope->getProperty(Property::RETRY_COUNT));
-        self::assertSame($serial, $envelope->getProperty('x-serial'));
         self::assertTrue($originalEnvelope->getMessageId()->equals($envelope->getMessageId()));
-    }
-
-    /**
-     * @dataProvider runnerDataProvider
-     */
-    public function testRejectWithRetryCountWithoutSerialIsInvalid(TestDriverFactory $factory): void
-    {
-        $messageBroker = $this->createMessageBroker($factory->getRunner(), $factory->getSchema());
-
-        $messageBroker->dispatch(Envelope::wrap(new MockMessage()));
-
-        $originalEnvelope = $messageBroker->get();
-
-        $serial = $originalEnvelope->getProperty('x-serial');
-        self::assertNotNull($serial);
-
-        self::expectException(\Exception::class);
-        $messageBroker->reject($originalEnvelope->withProperties(['x-serial' => null]));
     }
 
     /**
@@ -170,9 +148,6 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
         $messageBroker->dispatch(Envelope::wrap(new MockMessage()));
 
         $originalEnvelope = $messageBroker->get();
-
-        $serial = $originalEnvelope->getProperty('x-serial');
-        self::assertNotNull($serial);
 
         $messageBroker->reject($originalEnvelope->withProperties([
             Property::RETRY_COUNT => "1",
