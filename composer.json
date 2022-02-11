@@ -1,0 +1,66 @@
+{
+    "name" : "makinacorpus/php-message-broker",
+    "type": "library",
+    "description": "Opiniated and simple message broker interface along with a few implementations",
+    "keywords": ["message-broker", "postgresql", "symfony"],
+    "homepage": "http://github.com/makinacorpus/php-message-broker",
+    "license": "GPL-2.0-or-later",
+    "authors": [
+        {
+            "name" : "Pierre RINEAU",
+            "email" : "pierre.rineau@processus.org"
+        },
+        {
+            "name" : "Régis LEROY",
+            "email" : "regis.leroy@makina-corpus.com",
+            "role": "Developer"
+        },
+        {
+            "name" : "Simon MELLERIN",
+            "email" : "simon.mellerin@makina-corpus.com",
+            "role": "Developer"
+        },
+        {
+            "name" : "Makina Corpus",
+            "homepage" : "https://www.makina-corpus.com"
+        }
+    ],
+    "minimum-stability" : "dev",
+    "prefer-stable" : true,
+    "autoload" : {
+        "psr-4" : {
+            "MakinaCorpus\\MessageBroker\\" : "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "MakinaCorpus\\MessageBroker\\Tests\\": "tests/"
+        }
+    },
+    "require" : {
+        "makinacorpus/message": "^1.0.2",
+        "makinacorpus/normalization": "^1.0.1",
+        "php" : ">=8.0",
+        "psr/log": "^1.0",
+        "symfony/event-dispatcher": "^4.4 || ^5.0 || ^6.0"
+    },
+    "require-dev" : {
+        "makinacorpus/goat-query": "^2.1.7 || ^3.0",
+        "makinacorpus/goat-query-bundle": ">=2.0",
+        "phpunit/phpunit": "^9",
+        "ramsey/uuid": "^3.8 || ^4.0",
+        "symfony/config": "^5.4 || ^6.0",
+        "symfony/console": "^5.4 || ^6.0",
+        "symfony/dependency-injection": "^5.4 || ^6.0",
+        "symfony/http-kernel": "^5.4 || ^6.0",
+        "symfony/serializer-pack": "^1.0|^5.0",
+        "symfony/yaml": "^5.4 || ^6.0"
+    },
+    "suggest" : {
+        "doctrine/dbal": "For query builder usage over a Doctrine PDO connection",
+        "doctrine/doctrine-bundle": "For query builder usage over a Doctrine PDO connection",
+        "makinacorpus/goat-query": "For using PostgreSQL implementations of everything",
+        "makinacorpus/goat-query-bundle": "For using PostgreSQL implementations of everything",
+        "symfony/serializer-pack": "For better object serialisation and normalisation within the bus"
+    }
+}

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.3/phpunit.xsd"
+    backupGlobals="false"
+    colors="true"
+    bootstrap="vendor/autoload.php"
+    convertErrorsToExceptions="false"
+    convertNoticesToExceptions="true"
+    convertWarningsToExceptions="true"
+>
+    <testsuites>
+        <testsuite name="MessageBroker">
+            <directory>./tests</directory>
+        </testsuite>
+    </testsuites>
+
+    <coverage processUncoveredFiles="true">
+        <include>
+            <directory>./src</directory>
+        </include>
+        <exclude>
+            <directory>./tests</directory>
+            <directory>./vendor</directory>
+        </exclude>
+    </coverage>
+
+    <php>
+        <ini name="error_reporting" value="-1" />
+        <!--
+        <env name="ENABLE_EXT_PGSQL" value="1" />
+        <env name="PGSQL_95_URI" value="pgsql://username:password@127.0.0.1:5432/database" />
+         -->
+    </php>
+</phpunit>
