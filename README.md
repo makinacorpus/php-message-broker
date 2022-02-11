@@ -53,6 +53,42 @@ return [
 ];
 ```
 
+**Important note**: using Symfony and the `goat-query` implementation, the
+message broker will default on the `goat.runner.default` default database
+connection.
+
+If you need to setup another connection, simply add into the
+`config/goat_query.yaml` file:
+
+```yaml
+parameters:
+    #
+    # Overrides the one from this bundle.
+    #
+    goat.runner.message_broker:
+        alias: goat.runner.my_message_broker_connection
+
+goat_query:
+    runner:
+        # ... Your other connections, then:
+
+        #
+        # Your dedicated connection.
+        #
+        my_message_broker_connection:
+            url: '%env(resolve:DATABASE_URL_MESSAGE_BROKER)%'
+```
+
+This library may evolve later to allow multiple message brokers to co-exist
+in container, one for each queue, case in which environment variables will
+become the primary place for configuring.
+
+**Another important note**: using Symfony and the `goat-query` implementation,
+message broker instance will always be registered with the queue named
+`default`.
+
+This will be configurable someday, it just isn't right now.
+
 ## Standalone
 
 This is not documented yet, but basically only thing you need to do is to
