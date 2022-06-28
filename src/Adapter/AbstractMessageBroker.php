@@ -187,7 +187,7 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
             }
         }
 
-        $this->doMarkAsFailed($envelope->getMessageId());
+        $this->doMarkAsFailed($envelope->getMessageId(), $exception);
     }
 
     /**
