@@ -8,7 +8,7 @@ CREATE TABLE "message_broker" (
     "headers" jsonb NOT NULL DEFAULT '{}'::jsonb,
     "body" bytea NOT NULL,
     "error_code" bigint default null,
-    "error_message" varchar(500) default null,
+    "error_message" text default null,
     "error_trace" text default null,
     "retry_count" bigint DEFAULT 0,
     "retry_at" timestamp DEFAULT NULL,
