@@ -6,26 +6,30 @@ namespace MakinaCorpus\MessageBroker\Tests\Adpater;
 
 use Goat\Query\Expression\ValueExpression;
 use Goat\Runner\Runner;
-use MakinaCorpus\MessageBroker\MessageBroker;
-use MakinaCorpus\MessageBroker\Adapter\GoatQueryMessageBroker;
+use Goat\Runner\Testing\TestDriverFactory;
+use MakinaCorpus\MessageBroker\MessageConsumerFactory;
+use MakinaCorpus\MessageBroker\MessagePublisher;
+use MakinaCorpus\MessageBroker\Adapter\GoatQuery\GoatQueryMessageConsumerFactory;
+use MakinaCorpus\MessageBroker\Adapter\GoatQuery\GoatQueryMessagePublisher;
 use MakinaCorpus\MessageBroker\Tests\Adapter\AbstractMessageBrokerTest;
 
 final class GoatQueryMessageBrokerTest extends AbstractMessageBrokerTest
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+    }
+
     /**
      * {@inheritdoc}
      */
-    protected function createTestSchema(Runner $runner, string $schema)
+    protected function createTestData(Runner $runner, ?string $schema): void
     {
-        $runner->execute(
-            <<<SQL
-            DROP TABLE IF EXISTS "{$schema}"."message_broker"
-            SQL
-        );
+        $schema = $schema ?? "public";
 
         $runner->execute(
             <<<SQL
-            CREATE TABLE "{$schema}"."message_broker" (
+            CREATE TABLE IF NOT EXISTS "{$schema}"."message_broker" (
                 "id" uuid NOT NULL,
                 "serial" bigserial NOT NULL,
                 "queue" varchar(500) NOT NULL DEFAULT 'default',
@@ -46,13 +50,7 @@ final class GoatQueryMessageBrokerTest extends AbstractMessageBrokerTest
 
         $runner->execute(
             <<<SQL
-            DROP TABLE IF EXISTS "{$schema}"."message_broker_dead_letters"
-            SQL
-        );
-
-        $runner->execute(
-            <<<SQL
-            CREATE TABLE "{$schema}"."message_broker_dead_letters" (
+            CREATE TABLE IF NOT EXISTS "{$schema}"."message_broker_dead_letters" (
                 "id" uuid NOT NULL,
                 "serial" bigint,
                 "queue" varchar(500) NOT NULL DEFAULT 'default',
@@ -72,11 +70,11 @@ final class GoatQueryMessageBrokerTest extends AbstractMessageBrokerTest
     /**
      * {@inheritdoc}
      */
-    protected function createItemInQueue(MessageBroker $messageBroker, array $data): void
+    protected function createItemInQueue(MessagePublisher $messageBroker, array $data): void
     {
-        \assert($messageBroker instanceof GoatQueryMessageBroker);
+        \assert($messageBroker instanceof GoatQueryMessagePublisher);
 
-        $runner = (\Closure::bind(fn () => $messageBroker->runner, null, GoatQueryMessageBroker::class))();
+        $runner = (\Closure::bind(fn () => $messageBroker->runner, null, GoatQueryMessagePublisher::class))();
 
         $runner
             ->getQueryBuilder()
@@ -91,12 +89,18 @@ final class GoatQueryMessageBrokerTest extends AbstractMessageBrokerTest
     }
 
     /**
-     * {@inheritdoc}
+     * Create message broker instance that will be tested.
      */
-    protected function createMessageBroker(Runner $runner, string $schema): MessageBroker
+    protected function createMessagePublisher(TestDriverFactory $factory): MessagePublisher
     {
-        $this->createTestSchema($runner, $schema);
+        return new GoatQueryMessagePublisher($factory->getRunner(), $this->createSerializer(), ['schema' => $factory->getSchema()]);
+    }
 
-        return new GoatQueryMessageBroker($runner, $this->createSerializer());
+    /**
+     * Create message broker instance that will be tested.
+     */
+    protected function createMessageConsumerFactory(TestDriverFactory $factory): MessageConsumerFactory
+    {
+        return new GoatQueryMessageConsumerFactory($factory->getRunner(), $this->createSerializer(), ['schema' => $factory->getSchema()]);
     }
 }

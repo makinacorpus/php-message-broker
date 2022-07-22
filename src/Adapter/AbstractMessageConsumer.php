@@ -7,7 +7,7 @@ namespace MakinaCorpus\MessageBroker\Adapter;
 use MakinaCorpus\Message\BrokenEnvelope;
 use MakinaCorpus\Message\Envelope;
 use MakinaCorpus\Message\Property;
-use MakinaCorpus\MessageBroker\MessageBroker;
+use MakinaCorpus\MessageBroker\MessageConsumer;
 use MakinaCorpus\Message\Identifier\MessageId;
 use MakinaCorpus\Message\Identifier\MessageIdFactory;
 use MakinaCorpus\Normalization\NameMap;
@@ -21,13 +21,13 @@ use Psr\Log\NullLogger;
 /**
  * Abstract implementation that carries all the logic.
  */
-abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterface, NameMapAware
+abstract class AbstractMessageConsumer implements MessageConsumer, LoggerAwareInterface, NameMapAware
 {
     use LoggerAwareTrait;
     use NameMapAwareTrait;
 
     private string $contentType;
-    private string $queue;
+    private array $queue;
     private array $options;
     private Serializer $serializer;
 
@@ -36,8 +36,17 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
         $this->contentType = $options['content_type'] ?? Property::DEFAULT_CONTENT_TYPE;
         $this->logger = new NullLogger();
         $this->options = $options;
-        $this->queue = $options['queue'] ?? 'default';
         $this->serializer = $serializer;
+
+        if ($queue = $options['queue']) {
+            if (\is_array($queue)) {
+                $this->queue = $queue;
+            } else {
+                $this->queue = [$queue];
+            }
+        } else {
+            $this->queue = ['default'];
+        }
     }
 
     /**
@@ -54,13 +63,6 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
      *     - "retry_count" (null|int): number of retries attempted so far.
      */
     protected abstract function doGet(): ?array;
-
-    /**
-     * Send new message.
-     *
-     * This method must be atomic on the driver.
-     */
-    protected abstract function doSend(Envelope $envelope, string $serializedBody): void;
 
     /**
      * Send ACK for message.
@@ -152,14 +154,6 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
     /**
      * {@inheritdoc}
      */
-    public function dispatch(Envelope $envelope): void
-    {
-        $this->doDispatch($envelope);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
     public function ack(Envelope $envelope): void
     {
         $this->doAck($envelope);
@@ -191,50 +185,9 @@ abstract class AbstractMessageBroker implements MessageBroker, LoggerAwareInterf
     }
 
     /**
-     * Real implementation of dispatch.
+     * Get queues names from which to consume messages.
      */
-    private function doDispatch(Envelope $envelope, bool $keepMessageIdIfPresent = false): void
-    {
-        if ($keepMessageIdIfPresent) {
-            $messageId = $envelope->getMessageId();
-            if (!$messageId) {
-                $messageId = MessageIdFactory::generate();
-            }
-        } else {
-            $messageId = MessageIdFactory::generate();
-        }
-
-        // Reset message id if there is one, for the simple and unique reason
-        // that the application could arbitrary resend a message as a new
-        // message at anytime, and message identifier is the unique key.
-        $envelope->withMessageId($messageId);
-
-        $message = $envelope->getMessage();
-
-        if (!$envelope->hasProperty(Property::MESSAGE_TYPE)) {
-            $envelope->withProperties([Property::MESSAGE_TYPE => $this->getNameMap()->fromPhpType(\get_class($message), NameMap::TAG_COMMAND)]);
-        }
-
-        $contentType = $envelope->getProperty(Property::CONTENT_TYPE);
-        if (!$contentType) {
-            // For symfony/messenger compatibility.
-            $contentType = $envelope->getProperty('Content-Type', $this->contentType);
-
-            if (!$contentType) {
-                // We have to fallback onto something.
-                $contentType = 'application/json';
-            }
-
-            $envelope->withProperties([Property::CONTENT_TYPE => $contentType]);
-        }
-
-        $this->doSend($envelope, $this->serializer->serialize($message, $contentType));
-    }
-
-    /**
-     * Get queue name.
-     */
-    protected function getQueue(): string
+    protected function getInputQueues(): array
     {
         return $this->queue;
     }

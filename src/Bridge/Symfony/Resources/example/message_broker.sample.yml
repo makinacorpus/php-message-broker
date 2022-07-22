@@ -5,4 +5,23 @@
 # documented within this file are set to defaults.
 #
 message_broker:
-    # No configuration yet.
+    #
+    # Each consumer consumes from one or more queues.
+    #
+    # Key in the following array are abitrary names, values are array of queue
+    # names.
+    #
+    # In order to fetch the proper consumer for a task, use the ConsumerRegistry
+    # interface, all services will be registered to it.
+    #
+    # If you leave this empty (i.e. you don't define it) as single "default"
+    # named consumer will be created, which will consume everything from the
+    # "default" queue.
+    #
+    # In real life, you would have a single queue per consumer, but since this
+    # will be used in monolic applications, you can therefore plug runners that
+    # consume messages from more than one queues, hence the array here.
+    #
+    consumers:
+        default: default
+        cron: ["tasks", "cron", "some_other_queue"]

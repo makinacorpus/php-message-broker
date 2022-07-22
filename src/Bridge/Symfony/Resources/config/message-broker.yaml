@@ -6,29 +6,30 @@ services:
     goat.runner.message_broker:
         alias: "goat.runner.default"
 
-    # By arbitrarily injecting the message broker here, we loose the messenger
-    # configuration and routing flexibility: we cannot have multiple queues
-    # and multiple transports in parallel. But nevertheless, as of today, we
-    # do not need it, so let's just force a single bus/queue interface.
-    # You also cannot choose the SQL connection, this will come later.
-    # 'default' in name refers to the queue, not the service being the default.
-    # @todo
-    #    - As said below, later implement a registry for allow more than one
-    #      service to co-exist, one for each queue.
-    message_broker.message_broker.default:
+    message_broker.message_consumer_factory.goat_query:
         public: false
-        class: MakinaCorpus\MessageBroker\Adapter\GoatQueryMessageBroker
+        class: MakinaCorpus\MessageBroker\Adapter\GoatQuery\GoatQueryMessageConsumerFactory
         arguments: ["@goat.runner.message_broker", "@normalization.serializer"]
         tags: [{ name: "monolog.logger", channel: "message_broker" }]
         calls:
             - [setNameMap, ["@normalization.name_map"]]
 
-    # Give a generic identifier for message broker.
-    # @todo
-    #   - Later allow a registry as facade, for allowing more than one to
-    #     exists and fetch them on a per-queue basis.
-    message_broker.message_broker:
-        alias: message_broker.message_broker.default
+    message_broker.consumer_factory:
+        alias: message_broker.message_consumer_factory.goat_query
 
-    MakinaCorpus\MessageBroker\MessageBroker:
-        alias: message_broker.message_broker
+    MakinaCorpus\MessageBroker\MessageConsumerFactory:
+        alias: message_broker.consumer_factory
+
+    message_broker.message_publisher.goat_query:
+        public: false
+        class: MakinaCorpus\MessageBroker\Adapter\GoatQuery\GoatQueryMessagePublisher
+        arguments: ["@goat.runner.message_broker", "@normalization.serializer"]
+        tags: [{ name: "monolog.logger", channel: "message_broker" }]
+        calls:
+            - [setNameMap, ["@normalization.name_map"]]
+
+    message_broker.publisher:
+        alias: message_broker.message_publisher.goat_query
+
+    MakinaCorpus\MessageBroker\MessagePublisher:
+        alias: message_broker.publisher

@@ -98,7 +98,7 @@ create an instance implementing `MessageBroker`.
 
 If you are going to use the PostgreSQL implementation, please create the
 necessary database tables in your default schema, please see the
-`src/Adapter/schema/message-broker.pg.sql` file.
+`src/Adapter/GoatQuery/message-broker.pg.sql` file.
 
 # Usage
 

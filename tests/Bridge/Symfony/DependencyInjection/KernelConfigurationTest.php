@@ -6,7 +6,8 @@ namespace Goat\Bridge\Symfony\Tests\DependencyInjection;
 
 use Goat\Query\Symfony\GoatQueryBundle;
 use Goat\Runner\Runner;
-use MakinaCorpus\MessageBroker\MessageBroker;
+use MakinaCorpus\MessageBroker\MessageConsumerFactory;
+use MakinaCorpus\MessageBroker\MessagePublisher;
 use MakinaCorpus\MessageBroker\Bridge\Symfony\DependencyInjection\MessageBrokerExtension;
 use MakinaCorpus\Normalization\NameMap;
 use MakinaCorpus\Normalization\Serializer;
@@ -65,9 +66,13 @@ final class KernelConfigurationTest extends TestCase
         $config = $this->getMinimalConfig();
         $extension->load([$config], $container = $this->getContainer());
 
-        self::assertTrue($container->hasAlias('message_broker.message_broker'));
-        self::assertTrue($container->hasAlias(MessageBroker::class));
-        self::assertTrue($container->hasDefinition('message_broker.message_broker.default'));
+        self::assertTrue($container->hasAlias(MessageConsumerFactory::class));
+        self::assertTrue($container->hasAlias('message_broker.consumer_factory'));
+        self::assertTrue($container->hasDefinition('message_broker.message_consumer_factory.goat_query'));
+
+        self::assertTrue($container->hasAlias(MessagePublisher::class));
+        self::assertTrue($container->hasAlias('message_broker.publisher'));
+        self::assertTrue($container->hasDefinition('message_broker.message_publisher.goat_query'));
 
         $container->compile();
     }

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace MakinaCorpus\MessageBroker\Tests\Adapter;
 
-use Goat\Runner\Runner;
 use Goat\Runner\Testing\DatabaseAwareQueryTest;
 use Goat\Runner\Testing\TestDriverFactory;
 use MakinaCorpus\Message\BrokenEnvelope;
 use MakinaCorpus\Message\Envelope;
 use MakinaCorpus\Message\Property;
-use MakinaCorpus\MessageBroker\MessageBroker;
+use MakinaCorpus\MessageBroker\MessageConsumerFactory;
+use MakinaCorpus\MessageBroker\MessagePublisher;
 use MakinaCorpus\MessageBroker\Tests\Mock\MockMessage;
 use MakinaCorpus\Message\Identifier\MessageIdFactory;
 use MakinaCorpus\Normalization\Testing\WithSerializerTestTrait;
@@ -24,9 +24,10 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
      */
     public function testGetWhenEmptyGivesNull(TestDriverFactory $factory): void
     {
-        $messageBroker = $this->createMessageBroker($factory->getRunner(), $factory->getSchema());
+        $consumerFactory = $this->createMessageConsumerFactory($factory);
+        $consumerDefault = $consumerFactory->createConsumer();
 
-        self::assertNull($messageBroker->get());
+        self::assertNull($consumerDefault->get());
     }
 
     /**
@@ -34,18 +35,27 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
      */
     public function testGetFetchTheFirstOne(TestDriverFactory $factory): void
     {
-        $messageBroker = $this->createMessageBroker($factory->getRunner(), $factory->getSchema());
+        $publisher = $this->createMessagePublisher($factory);
+        $consumerFactory = $this->createMessageConsumerFactory($factory);
+        $consumerDefault = $consumerFactory->createConsumer();
+        $consumerOther = $consumerFactory->createConsumer(['other_queue']);
 
-        $messageBroker->dispatch(Envelope::wrap(new MockMessage()));
-        $messageBroker->dispatch(Envelope::wrap(new \DateTimeImmutable()));
+        $publisher->dispatch(Envelope::wrap(new MockMessage()));
+        $publisher->dispatch(Envelope::wrap(new \DateTime()));
+        $publisher->dispatch(Envelope::wrap(new \DateTimeImmutable()), 'other_queue');
 
-        $envelope1 = $messageBroker->get();
+        $envelope1 = $consumerDefault->get();
         self::assertSame(MockMessage::class, $envelope1->getProperty(Property::MESSAGE_TYPE));
 
-        $envelope2 = $messageBroker->get();
+        $envelope2 = $consumerOther->get();
         self::assertSame(\DateTimeImmutable::class, $envelope2->getProperty(Property::MESSAGE_TYPE));
 
-        self::assertNull($messageBroker->get());
+        $envelope3 = $consumerDefault->get();
+        self::assertSame(\DateTime::class, $envelope3->getProperty(Property::MESSAGE_TYPE));
+
+        self::assertNull($consumerDefault->get());
+
+        self::assertNull($consumerOther->get());
     }
 
     /**
@@ -53,10 +63,13 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
      */
     public function testAutomaticPropertiesAreComputed(TestDriverFactory $factory): void
     {
-        $messageBroker = $this->createMessageBroker($factory->getRunner(), $factory->getSchema());
+        $publisher = $this->createMessagePublisher($factory);
+        $consumerFactory = $this->createMessageConsumerFactory($factory);
+        $consumerDefault = $consumerFactory->createConsumer();
 
-        $messageBroker->dispatch(Envelope::wrap(new MockMessage()));
-        $envelope = $messageBroker->get();
+        $publisher->dispatch(Envelope::wrap(new MockMessage()));
+
+        $envelope = $consumerDefault->get();
 
         self::assertSame(MockMessage::class, $envelope->getProperty(Property::MESSAGE_TYPE));
         self::assertNotInstanceOf(BrokenEnvelope::class, $envelope);
@@ -70,12 +83,15 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
      */
     public function testContentTypeFromEnvelopeIsUsed(TestDriverFactory $factory): void
     {
-        $messageBroker = $this->createMessageBroker($factory->getRunner(), $factory->getSchema());
+        $publisher = $this->createMessagePublisher($factory);
+        $consumerFactory = $this->createMessageConsumerFactory($factory);
+        $consumerDefault = $consumerFactory->createConsumer();
 
-        $messageBroker->dispatch(Envelope::wrap(new MockMessage(), [
+        $publisher->dispatch(Envelope::wrap(new MockMessage(), [
             Property::CONTENT_TYPE => 'application/xml',
         ]));
-        $envelope = $messageBroker->get();
+
+        $envelope = $consumerDefault->get();
 
         // This will fail if we change the default, just to be sure we do
         // really test the correct behaviour.
@@ -91,13 +107,15 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
      */
     public function testPropertiesArePropagated(TestDriverFactory $factory): void
     {
-        $messageBroker = $this->createMessageBroker($factory->getRunner(), $factory->getSchema());
+        $publisher = $this->createMessagePublisher($factory);
+        $consumerFactory = $this->createMessageConsumerFactory($factory);
+        $consumerDefault = $consumerFactory->createConsumer();
 
-        $messageBroker->dispatch(Envelope::wrap(new MockMessage(), [
+        $publisher->dispatch(Envelope::wrap(new MockMessage(), [
             'x-foo' => 'bar',
         ]));
 
-        $envelope = $messageBroker->get();
+        $envelope = $consumerDefault->get();
 
         self::assertSame('bar', $envelope->getProperty('x-foo'));
     }
@@ -107,14 +125,16 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
      */
     public function testFailedMessagesAreNotGetAgain(TestDriverFactory $factory): void
     {
-        $messageBroker = $this->createMessageBroker($factory->getRunner(), $factory->getSchema());
+        $publisher = $this->createMessagePublisher($factory);
+        $consumerFactory = $this->createMessageConsumerFactory($factory);
+        $consumerDefault = $consumerFactory->createConsumer();
 
-        $messageBroker->dispatch(Envelope::wrap(new MockMessage()));
+        $publisher->dispatch(Envelope::wrap(new MockMessage()));
 
-        $envelope = $messageBroker->get();
-        $messageBroker->reject($envelope);
+        $envelope = $consumerDefault->get();
+        $consumerDefault->reject($envelope);
 
-        self::assertNull($messageBroker->get());
+        self::assertNull($consumerDefault->get());
     }
 
     /**
@@ -122,17 +142,19 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
      */
     public function testRejectWithRetryCountIsRequeued(TestDriverFactory $factory): void
     {
-        $messageBroker = $this->createMessageBroker($factory->getRunner(), $factory->getSchema());
+        $publisher = $this->createMessagePublisher($factory);
+        $consumerFactory = $this->createMessageConsumerFactory($factory);
+        $consumerDefault = $consumerFactory->createConsumer();
 
-        $messageBroker->dispatch(Envelope::wrap(new MockMessage()));
+        $publisher->dispatch(Envelope::wrap(new MockMessage()));
 
-        $originalEnvelope = $messageBroker->get();
+        $originalEnvelope = $consumerDefault->get();
 
-        $messageBroker->reject($originalEnvelope->withProperties([
+        $consumerDefault->reject($originalEnvelope->withProperties([
             Property::RETRY_COUNT => "1",
         ]));
 
-        $envelope = $messageBroker->get();
+        $envelope = $consumerDefault->get();
 
         self::assertSame("1", $envelope->getProperty(Property::RETRY_COUNT));
         self::assertTrue($originalEnvelope->getMessageId()->equals($envelope->getMessageId()));
@@ -143,18 +165,20 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
      */
     public function testRejectWithRetryDelayInFarFutureIsNotGetRightNow(TestDriverFactory $factory): void
     {
-        $messageBroker = $this->createMessageBroker($factory->getRunner(), $factory->getSchema());
+        $publisher = $this->createMessagePublisher($factory);
+        $consumerFactory = $this->createMessageConsumerFactory($factory);
+        $consumerDefault = $consumerFactory->createConsumer();
 
-        $messageBroker->dispatch(Envelope::wrap(new MockMessage()));
+        $publisher->dispatch(Envelope::wrap(new MockMessage()));
 
-        $originalEnvelope = $messageBroker->get();
+        $originalEnvelope = $consumerDefault->get();
 
-        $messageBroker->reject($originalEnvelope->withProperties([
+        $consumerDefault->reject($originalEnvelope->withProperties([
             Property::RETRY_COUNT => "1",
             Property::RETRY_DELAI => "100000000",
         ]));
 
-        $envelope = $messageBroker->get();
+        $envelope = $consumerDefault->get();
         self::assertNull($envelope);
     }
 
@@ -163,26 +187,28 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
      */
     public function testRejectWithLowerRetryCountGetsFixed(TestDriverFactory $factory): void
     {
-        $messageBroker = $this->createMessageBroker($factory->getRunner(), $factory->getSchema());
+        $publisher = $this->createMessagePublisher($factory);
+        $consumerFactory = $this->createMessageConsumerFactory($factory);
+        $consumerDefault = $consumerFactory->createConsumer();
 
-        $messageBroker->dispatch(Envelope::wrap(new MockMessage()));
+        $publisher->dispatch(Envelope::wrap(new MockMessage()));
 
-        $originalEnvelope = $messageBroker->get();
-        $messageBroker->reject($originalEnvelope->withProperties([
+        $originalEnvelope = $consumerDefault->get();
+        $consumerDefault->reject($originalEnvelope->withProperties([
             Property::RETRY_COUNT => "1",
         ]));
 
-        $secondEnvelope = $messageBroker->get();
-        $messageBroker->reject($secondEnvelope->withProperties([
+        $secondEnvelope = $consumerDefault->get();
+        $consumerDefault->reject($secondEnvelope->withProperties([
             Property::RETRY_COUNT => "1",
         ]));
 
-        $thirdEnvelope = $messageBroker->get();
-        $messageBroker->reject($thirdEnvelope->withProperties([
+        $thirdEnvelope = $consumerDefault->get();
+        $consumerDefault->reject($thirdEnvelope->withProperties([
             Property::RETRY_COUNT => "1",
         ]));
 
-        $envelope = $messageBroker->get();
+        $envelope = $consumerDefault->get();
         self::assertSame("3", $envelope->getProperty(Property::RETRY_COUNT));
     }
 
@@ -191,11 +217,11 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
      */
     public function testMissingTypeInDatabaseFallsBackWithHeader(TestDriverFactory $factory): void
     {
-        $runner = $factory->getRunner();
+        $publisher = $this->createMessagePublisher($factory);
+        $consumerFactory = $this->createMessageConsumerFactory($factory);
+        $consumerDefault = $consumerFactory->createConsumer();
 
-        $messageBroker = $this->createMessageBroker($runner, $factory->getSchema());
-
-        $this->createItemInQueue($messageBroker, [
+        $this->createItemInQueue($publisher, [
             'id' => MessageIdFactory::generate()->toString(),
             'headers' => [
                 Property::CONTENT_TYPE => 'application/json',
@@ -204,7 +230,7 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
             'body' => '{}',
         ]);
 
-        $envelope = $messageBroker->get();
+        $envelope = $consumerDefault->get();
 
         self::assertSame(MockMessage::class, $envelope->getProperty(Property::MESSAGE_TYPE));
         self::assertInstanceOf(MockMessage::class, $envelope->getMessage());
@@ -215,11 +241,11 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
      */
     public function testMissingContentTypeInDatabaseFallsBackWithHeader(TestDriverFactory $factory): void
     {
-        $runner = $factory->getRunner();
+        $publisher = $this->createMessagePublisher($factory);
+        $consumerFactory = $this->createMessageConsumerFactory($factory);
+        $consumerDefault = $consumerFactory->createConsumer();
 
-        $messageBroker = $this->createMessageBroker($runner, $factory->getSchema());
-
-        $this->createItemInQueue($messageBroker, [
+        $this->createItemInQueue($publisher, [
             'id' => MessageIdFactory::generate()->toString(),
             'headers' => [
                 Property::CONTENT_TYPE => 'application/json',
@@ -228,7 +254,7 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
             'body' => '{}',
         ]);
 
-        $envelope = $messageBroker->get();
+        $envelope = $consumerDefault->get();
 
         self::assertSame(MockMessage::class, $envelope->getProperty(Property::MESSAGE_TYPE));
         self::assertInstanceOf(MockMessage::class, $envelope->getMessage());
@@ -239,11 +265,11 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
      */
     public function testNoTypeGivesBrokenEnvelope(TestDriverFactory $factory): void
     {
-        $runner = $factory->getRunner();
+        $publisher = $this->createMessagePublisher($factory);
+        $consumerFactory = $this->createMessageConsumerFactory($factory);
+        $consumerDefault = $consumerFactory->createConsumer();
 
-        $messageBroker = $this->createMessageBroker($runner, $factory->getSchema());
-
-        $this->createItemInQueue($messageBroker, [
+        $this->createItemInQueue($publisher, [
             'id' => MessageIdFactory::generate()->toString(),
             'headers' => [
                 Property::CONTENT_TYPE => 'application/json',
@@ -251,7 +277,7 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
             'body' => '{}',
         ]);
 
-        $envelope = $messageBroker->get();
+        $envelope = $consumerDefault->get();
 
         self::assertNull($envelope->getProperty(Property::MESSAGE_TYPE));
         self::assertInstanceOf(BrokenEnvelope::class, $envelope);
@@ -263,11 +289,11 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
      */
     public function testNoContentTypeGivesBrokenEnvelope(TestDriverFactory $factory): void
     {
-        $runner = $factory->getRunner();
+        $publisher = $this->createMessagePublisher($factory);
+        $consumerFactory = $this->createMessageConsumerFactory($factory);
+        $consumerDefault = $consumerFactory->createConsumer();
 
-        $messageBroker = $this->createMessageBroker($runner, $factory->getSchema());
-
-        $this->createItemInQueue($messageBroker, [
+        $this->createItemInQueue($publisher, [
             'id' => MessageIdFactory::generate()->toString(),
             'headers' => [
                 Property::MESSAGE_TYPE => MockMessage::class,
@@ -275,7 +301,7 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
             'body' => '{}',
         ]);
 
-        $envelope = $messageBroker->get();
+        $envelope = $consumerDefault->get();
 
         self::assertSame(MockMessage::class, $envelope->getProperty(Property::MESSAGE_TYPE));
         self::assertInstanceOf(BrokenEnvelope::class, $envelope);
@@ -285,10 +311,15 @@ abstract class AbstractMessageBrokerTest extends DatabaseAwareQueryTest
     /**
      * Create an arbitrary item in queue.
      */
-    protected abstract function createItemInQueue(MessageBroker $messageBroker, array $data): void;
+    protected abstract function createItemInQueue(MessagePublisher $publisher, array $data): void;
 
     /**
      * Create message broker instance that will be tested.
      */
-    protected abstract function createMessageBroker(Runner $runner, string $schema): MessageBroker;
+    protected abstract function createMessagePublisher(TestDriverFactory $factory): MessagePublisher;
+
+    /**
+     * Create message broker instance that will be tested.
+     */
+    protected abstract function createMessageConsumerFactory(TestDriverFactory $factory): MessageConsumerFactory;
 }
