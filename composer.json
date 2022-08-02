@@ -45,8 +45,8 @@
         "symfony/event-dispatcher": "^4.4 || ^5.0 || ^6.0"
     },
     "require-dev" : {
-        "makinacorpus/goat-query": "^2.1.7 || ^3.0",
-        "makinacorpus/goat-query-bundle": ">=2.0",
+        "makinacorpus/goat-query": "^3.0.4",
+        "makinacorpus/goat-query-bundle": ">=3.0",
         "phpunit/phpunit": "^9",
         "ramsey/uuid": "^3.8 || ^4.0",
         "symfony/config": "^5.4 || ^6.0",

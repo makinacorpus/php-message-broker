@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MakinaCorpus\MessageBroker\Adapter\GoatQuery;
 
+use Goat\Query\Expression\ConstantRowExpression;
 use Goat\Runner\Runner;
 use MakinaCorpus\Message\Envelope;
 use MakinaCorpus\Message\Property;
@@ -44,7 +45,7 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
                         SELECT "id"
                         FROM "{$this->schema}"."message_broker"
                         WHERE
-                            "queue" = ?::string
+                            "queue" IN ?
                             AND "consumed_at" IS NULL
                             AND ("retry_at" IS NULL OR "retry_at" <= current_timestamp)
                         ORDER BY
@@ -59,7 +60,7 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
                     "body"::bytea,
                     "retry_count"
                 SQL,
-                $this->getInputQueues()
+                [new ConstantRowExpression($this->getInputQueues())]
             )
             ->fetch()
         ;

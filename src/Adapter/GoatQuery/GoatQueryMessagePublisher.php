@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MakinaCorpus\MessageBroker\Adapter\GoatQuery;
 
+use Goat\Query\Expression\ValueExpression;
 use Goat\Runner\Runner;
 use MakinaCorpus\Message\Envelope;
 use MakinaCorpus\MessageBroker\Adapter\AbstractMessagePublisher;
@@ -40,7 +41,7 @@ final class GoatQueryMessagePublisher extends AbstractMessagePublisher
            , [
                $envelope->getMessageId()->toString(),
                $routingKey,
-               $envelope->getProperties(),
+               new ValueExpression($envelope->getProperties(), 'json'),
                $serializedBody,
            ]
         );
