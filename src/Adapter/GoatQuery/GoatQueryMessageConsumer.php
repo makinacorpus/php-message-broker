@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MakinaCorpus\MessageBroker\Adapter\GoatQuery;
 
 use Goat\Query\Expression\ConstantRowExpression;
+use Goat\Query\Expression\ValueExpression;
 use Goat\Runner\Runner;
 use MakinaCorpus\Message\Envelope;
 use MakinaCorpus\Message\Property;
@@ -95,7 +96,7 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
                 "id" = ?
             SQL
             , [
-                $envelope->getProperties(),
+                new ValueExpression($envelope->getProperties(), 'json'),
                 $count,
                 $envelope->getMessageId(),
             ]
