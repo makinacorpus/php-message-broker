@@ -17,6 +17,8 @@ final class GoatQueryMessagePublisher extends AbstractMessagePublisher
 {
     private Runner $runner;
     private string $schema = 'public';
+    private bool $useListen = false;
+    private string $listenChannel = 'goat_message_broker';
 
     public function __construct(Runner $runner, Serializer $serializer, array $options = [])
     {
@@ -24,6 +26,18 @@ final class GoatQueryMessagePublisher extends AbstractMessagePublisher
 
         $this->runner = $runner;
         $this->schema = $options['schema'] ?? 'public';
+
+        if ($options['listen_enabled'] ?? false) {
+            if ('pgsql' === ($driver = $runner->getDriverName())) {
+                $this->useListen = true;
+            } else {
+                \trigger_error(\sprintf("'listen_enabled' option is set to true using driver '%s', but it only is supported by 'pgsql'.", $driver), E_USER_WARNING);
+            }
+        }
+
+        if ($value = ($options['listen_channel'] ?? null)) {
+            $this->listenChannel = $value;
+        }
     }
 
     /**
@@ -45,5 +59,10 @@ final class GoatQueryMessagePublisher extends AbstractMessagePublisher
                $serializedBody,
            ]
         );
+
+        // @todo Explore the pertinence of using a trigger here.
+        if ($this->useListen) {
+            $this->runner->perform("SELECT pg_notify(?, ?)", [new ValueExpression($this->listenChannel), new ValueExpression($routingKey, 'text')]);
+        }
     }
 }

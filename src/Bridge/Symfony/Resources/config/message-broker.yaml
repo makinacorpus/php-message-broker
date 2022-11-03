@@ -1,3 +1,26 @@
+parameters:
+    # Enable LISTEN/NOTIFY in backend, works with PostgreSQL only.
+    # This will save a lot of round-trips with the database in scenarios
+    # where you IDLE a lot, and save CPU at the same time.
+    message_broker.listen_enabled: false
+
+    # LISTEN channel to use for LISTEN/NOTIFY if enabled.
+    message_broker.listen_channel: "goat_message_broker"
+
+    # When using LISTEN/NOTIFY in backend, this option defines the time
+    # interval between synchronization checks. When you use LISTEN to await
+    # server events, it's highly probable that, at some point, you loose
+    # synchronicity with it, and queue becomes full once again without the
+    # worker process seeing it. Every N milliseconds, worker will attempt
+    # to empty the message queue without using LISTEN.
+    message_broker.queue_check_delay: 30000
+
+    # Do not alter this.
+    message_broker.options:
+        listen_channel: "%message_broker.listen_channel%"
+        listen_enabled: "%message_broker.listen_enabled%"
+        queue_check_delay: "%message_broker.queue_check_delay%"
+
 services:
     # Message broker SQL queries are simple and supposedly safe and will
     # hopefully not trigger any contention, changing its SQL connection is
@@ -9,7 +32,7 @@ services:
     message_broker.message_consumer_factory.goat_query:
         public: false
         class: MakinaCorpus\MessageBroker\Adapter\GoatQuery\GoatQueryMessageConsumerFactory
-        arguments: ["@goat.runner.message_broker", "@normalization.serializer"]
+        arguments: ["@goat.runner.message_broker", "@normalization.serializer", "%message_broker.options%"]
         tags: [{ name: "monolog.logger", channel: "message_broker" }]
         calls:
             - [setNameMap, ["@normalization.name_map"]]
@@ -23,7 +46,7 @@ services:
     message_broker.message_publisher.goat_query:
         public: false
         class: MakinaCorpus\MessageBroker\Adapter\GoatQuery\GoatQueryMessagePublisher
-        arguments: ["@goat.runner.message_broker", "@normalization.serializer"]
+        arguments: ["@goat.runner.message_broker", "@normalization.serializer", "%message_broker.options%"]
         tags: [{ name: "monolog.logger", channel: "message_broker" }]
         calls:
             - [setNameMap, ["@normalization.name_map"]]

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MakinaCorpus\MessageBroker\Adapter\GoatQuery;
 
 use Goat\Query\Expression\ConstantRowExpression;
+use Goat\Query\Expression\IdentifierExpression;
 use Goat\Query\Expression\ValueExpression;
 use Goat\Runner\Runner;
 use MakinaCorpus\Message\Envelope;
@@ -20,6 +21,25 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
 {
     private Runner $runner;
     private string $schema = 'public';
+    private bool $useListen = false;
+    private bool $initialized = false;
+    private int $emptyCheckDelai = 30;
+    private string $listenChannel = 'goat_message_broker';
+
+    /**
+     * When booting, if listen is enabled, the bus will probably wait for some
+     * other process to NOTIFY in order to consume messages. Problem lies in the
+     * fact there might be awaiting messages already.
+     *
+     * In case we do wait for NOTIFY to be raised, the worker will simply do
+     * nothing about what is already left in the database.
+     *
+     * If previous was not none, it will always attempt the UPDATE query to
+     * consume a message, if previous was none, it will await for NOTIFY
+     * instead. This way, until the queue contains messages, NOTIFY will be
+     * ignored.
+     */
+    private ?float $emptiedAt = null;
 
     public function __construct(Runner $runner, Serializer $serializer, array $options = [])
     {
@@ -27,14 +47,49 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
 
         $this->runner = $runner;
         $this->schema = $options['schema'] ?? 'public';
+
+        if ($options['listen_enabled'] ?? false) {
+            if ('pgsql' === ($driver = $runner->getDriverName())) {
+                $this->useListen = true;
+            } else {
+                \trigger_error(\sprintf("'listen_enabled' option is set to true using driver '%s', but it only is supported by 'pgsql'.", $driver), E_USER_WARNING);
+            }
+        }
+
+        if ($value = ($options['listen_channel'] ?? null)) {
+            $this->listenChannel = $value;
+        }
+
+        if ($value = ($options['queue_check_delay'] ?? null)) {
+            if (!\ctype_digit($value)) {
+                throw new \InvalidArgumentException(\sprintf("'queue_check_delay' option must be a positive integer."));
+            }
+            $this->emptyCheckDelai = \abs($value * 1000);
+        }
     }
 
     /**
      * {@inheritdoc}
      */
-    protected function doGet(): ?array
+    private function doGetWithListen(): ?array
     {
-        return $this
+        if (null === $this->emptiedAt || (\microtime(true) - $this->emptiedAt) < $this->emptyCheckDelai) {
+            return $this->doGet();
+        }
+
+        if (!$this->initialized) {
+            $this->runner->perform('LISTEN ?', [new IdentifierExpression($this->listenChannel)]);
+        }
+
+        throw new \Exception("Notification handling not implemented yet in makinacorpus/goat-query");
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    private function doGetClassic(): ?array
+    {
+        $ret = $this
             ->runner
             ->execute(
                 <<<SQL
@@ -65,6 +120,24 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
             )
             ->fetch()
         ;
+
+        if (!$ret) {
+            $this->emptiedAt = \microtime(true);
+        }
+
+        return $ret;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    protected function doGet(): ?array
+    {
+        if ($this->useListen) {
+            return $this->doGetWithListen();
+        } else {
+            return $this->doGetClassic();
+        }
     }
 
     /**
