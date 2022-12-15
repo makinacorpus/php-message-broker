@@ -94,21 +94,18 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
             ->execute(
                 <<<SQL
                 UPDATE "{$this->schema}"."message_broker"
-                SET
-                    "consumed_at" = now()
-                WHERE
-                    "id" IN (
-                        SELECT "id"
-                        FROM "{$this->schema}"."message_broker"
-                        WHERE
-                            "queue" IN ?
-                            AND "consumed_at" IS NULL
-                            AND ("retry_at" IS NULL OR "retry_at" <= current_timestamp)
-                        ORDER BY
-                            "serial" ASC
-                        LIMIT 1 OFFSET 0
-                    )
-                    AND "consumed_at" IS NULL
+                SET "consumed_at" = current_timestamp
+                WHERE "id" IN (
+                    SELECT "id"
+                    FROM "{$this->schema}"."message_broker"
+                    WHERE
+                        "queue" IN ?
+                        AND "consumed_at" IS NULL
+                        AND ("retry_at" IS NULL OR "retry_at" <= current_timestamp)
+                    ORDER BY "serial" ASC
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1 OFFSET 0
+                )
                 RETURNING
                     "id",
                     "serial",
