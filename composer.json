@@ -39,7 +39,7 @@
     },
     "require" : {
         "makinacorpus/message": "^1.0.4",
-        "makinacorpus/normalization": "^1.0.1",
+        "makinacorpus/normalization": "^1.0.1 || ^2.0",
         "php" : ">=8.0",
         "psr/log": "^1.0 || ^2.0 || ^3.0"
     },
