@@ -19,8 +19,8 @@ use MakinaCorpus\Normalization\Serializer;
  */
 final class GoatQueryMessageConsumer extends AbstractMessageConsumer
 {
-    private Runner $runner;
-    private string $schema = 'public';
+    use GoatQueryTrait;
+
     private bool $useListen = false;
     private bool $initialized = false;
     private int $emptyCheckDelai = 30;
@@ -47,6 +47,7 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
 
         $this->runner = $runner;
         $this->schema = $options['schema'] ?? 'public';
+        $this->tableName = $options['table'] ?? 'message_broker';
 
         if ($options['listen_enabled'] ?? false) {
             if ('pgsql' === ($driver = $runner->getDriverName())) {
@@ -89,15 +90,17 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
      */
     private function doGetClassic(): ?array
     {
+        $this->checkTable();
+
         $ret = $this
             ->runner
             ->execute(
                 <<<SQL
-                UPDATE "{$this->schema}"."message_broker"
+                UPDATE ?
                 SET "consumed_at" = current_timestamp
                 WHERE "id" IN (
                     SELECT "id"
-                    FROM "{$this->schema}"."message_broker"
+                    FROM ?
                     WHERE
                         "queue" IN ?
                         AND "consumed_at" IS NULL
@@ -113,7 +116,11 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
                     "body"::bytea,
                     "retry_count"
                 SQL,
-                [new ConstantRowExpression($this->getInputQueues())]
+                [
+                    $this->createTableExpression(),
+                    $this->createTableExpression(),
+                    new ConstantRowExpression($this->getInputQueues()),
+                ]
             )
             ->fetch()
         ;
@@ -150,12 +157,14 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
      */
     protected function doMarkForRetry(Envelope $envelope): void
     {
+        $this->checkTable();
+
         $delay = (int) $envelope->getProperty(Property::RETRY_DELAI);
         $count = (int) $envelope->getProperty(Property::RETRY_COUNT, "0");
 
         $this->runner->perform(
             <<<SQL
-            UPDATE "{$this->schema}"."message_broker"
+            UPDATE ?
             SET
                 "consumed_at" = null,
                 "has_failed" = true,
@@ -166,6 +175,7 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
                 "id" = ?
             SQL
             , [
+                $this->createTableExpression(),
                 new ValueExpression($envelope->getProperties(), 'json'),
                 $count,
                 $envelope->getMessageId(),
@@ -178,10 +188,12 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
      */
     protected function doMarkAsFailed(MessageId $id, ?\Throwable $exception = null): void
     {
+        $this->checkTable();
+
         if ($exception) {
             $this->runner->perform(
                 <<<SQL
-                UPDATE "{$this->schema}"."message_broker"
+                UPDATE ?
                 SET
                     "has_failed" = true,
                     "error_code" = ?,
@@ -191,6 +203,7 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
                     "id" = ?
                 SQL,
                 [
+                    $this->createTableExpression(),
                     $exception->getCode(),
                     $exception->getMessage(),
                     $this->normalizeExceptionTrace($exception),
@@ -200,13 +213,14 @@ final class GoatQueryMessageConsumer extends AbstractMessageConsumer
         } else {
             $this->runner->perform(
                 <<<SQL
-                UPDATE "{$this->schema}"."message_broker"
+                UPDATE ?
                 SET
                     "has_failed" = true
                 WHERE
                     "id" = ?
                 SQL,
                 [
+                    $this->createTableExpression(),
                     $id->toString(),
                 ]
             );

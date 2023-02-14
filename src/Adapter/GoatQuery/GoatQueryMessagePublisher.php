@@ -9,14 +9,15 @@ use Goat\Runner\Runner;
 use MakinaCorpus\Message\Envelope;
 use MakinaCorpus\MessageBroker\Adapter\AbstractMessagePublisher;
 use MakinaCorpus\Normalization\Serializer;
+use Goat\Query\Expression\TableExpression;
 
 /**
  * This is a PostgreSQL implementation, which uses PostgresSQL only dialect.
  */
 final class GoatQueryMessagePublisher extends AbstractMessagePublisher
 {
-    private Runner $runner;
-    private string $schema = 'public';
+    use GoatQueryTrait;
+
     private bool $useListen = false;
     private string $listenChannel = 'goat_message_broker';
 
@@ -26,6 +27,7 @@ final class GoatQueryMessagePublisher extends AbstractMessagePublisher
 
         $this->runner = $runner;
         $this->schema = $options['schema'] ?? 'public';
+        $this->tableName = $options['table'] ?? 'message_broker';
 
         if ($options['listen_enabled'] ?? false) {
             if ('pgsql' === ($driver = $runner->getDriverName())) {
@@ -41,18 +43,29 @@ final class GoatQueryMessagePublisher extends AbstractMessagePublisher
     }
 
     /**
+     * Create table expression.
+     */
+    protected function createTableExpression(): TableExpression
+    {
+        return new TableExpression($this->tableName, 'message_broker', $this->schema);
+    }
+
+    /**
      * {@inheritdoc}
      */
     protected function doSend(Envelope $envelope, string $serializedBody, string $routingKey): void
     {
+        $this->checkTable();
+
         $this->runner->perform(
             <<<SQL
-            INSERT INTO "{$this->schema}"."message_broker"
+            INSERT INTO ?
                 (id, queue, headers, body)
             VALUES
                 (?::uuid, ?::string, ?::json, ?::bytea)
             SQL
            , [
+               $this->createTableExpression(),
                $envelope->getMessageId()->toString(),
                $routingKey,
                new ValueExpression($envelope->getProperties(), 'json'),
