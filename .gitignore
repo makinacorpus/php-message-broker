@@ -1,0 +1,9 @@
+/.buildpath
+/.phpunit.result.cache
+/.project
+/.settings/
+/composer.lock
+/coverage
+/phpunit.xml
+/sys/composer.phar
+/vendor
