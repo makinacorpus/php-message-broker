@@ -41,8 +41,7 @@
         "makinacorpus/message": "^1.0.4",
         "makinacorpus/normalization": "^1.0.1",
         "php" : ">=8.0",
-        "psr/log": "^1.0",
-        "symfony/event-dispatcher": "^4.4 || ^5.0 || ^6.0"
+        "psr/log": "^1.0 || ^2.0 || ^3.0"
     },
     "require-dev" : {
         "makinacorpus/goat-query": "^3.0.4",
@@ -51,7 +50,7 @@
         "ramsey/uuid": "^3.8 || ^4.0",
         "symfony/config": "^5.4 || ^6.0",
         "symfony/console": "^5.4 || ^6.0",
-        "symfony/dependency-injection": "^5.4 || ^6.0",
+        "symfony/event-dispatcher": "^4.4 || ^5.0 || ^6.0",
         "symfony/http-kernel": "^5.4 || ^6.0",
         "symfony/serializer-pack": "^1.0|^5.0",
         "symfony/yaml": "^5.4 || ^6.0"
